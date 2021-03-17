@@ -15,22 +15,20 @@ import argparse
 import logging
 import sys
 import json
+import ssl
+import math
 import yaml
 import pika
-import ssl
 import pymavlink.mavutil as mavutil
+from pymavlink.dialects.v10 import common as mavlink1
 
 OWN_SYSID = 255
 OWN_COMPID = 0
 UDP_CONNECT_TIMEOUT = 10
 
 
-if __name__ == "__main__":
-    log_format = '%(asctime)s %(levelname)s:%(name)s: %(message)s'
-    log_datefmt = '%Y-%m-%dT%H:%M:%S%z'
-    logging.basicConfig(format=log_format, datefmt=log_datefmt, level=logging.INFO)
-    logger = logging.getLogger()
-
+def setup() -> dict:
+    """Parse config file and CLI options; Return config dict"""
     parser = argparse.ArgumentParser(description='MAVLink Network Remote ID (Tracking) Bridge')
     parser.add_argument("-c", "--config", default='settings.yml',
                         help="path to settings file")
@@ -47,36 +45,43 @@ if __name__ == "__main__":
     else:
         logger.setLevel(logging.WARNING)
 
-    with open(args.config) as f:
-        data = yaml.load(f, Loader=yaml.FullLoader)
+    amqp_conf_valid = False
+    mavlink_config_exists = False
+    with open(args.config) as file:
+        data = yaml.load(file, Loader=yaml.FullLoader)
 
         # all amqp keys are required
-        AmqpConfigIsValid = False
+        amqp_conf_valid = False
         if 'amqp' in data:
-            amqpKeys = ['host', 'username', 'password', 'queue']
-            AmqpConfigIsValid = True
-            for key in amqpKeys:
+            amqp_keys = ['host', 'username', 'password', 'queue']
+            amqp_conf_valid = True
+            for key in amqp_keys:
                 if key not in data['amqp']:
                     logger.error("Key \'%s\' missing from AMQP config", key)
-                    AmqpConfigIsValid = False
+                    amqp_conf_valid = False
 
-        if not AmqpConfigIsValid:
+        if not amqp_conf_valid:
             logger.error("AMQP config section missing or incomplete in settings file")
             sys.exit(1)
 
         # mavlink config is optional
-        MavlinkConfigExists = False
+        mavlink_config_exists = False
         if 'mavlink' in data:
             if 'device' in data['mavlink']:
-                MavlinkConfigExists = True
+                mavlink_config_exists = True
 
     if args.device is not None:
         data['mavlink']['device'] = args.device
-    elif not MavlinkConfigExists:
+    elif not mavlink_config_exists:
         logger.error("No MAVLink device specified in config or CLI options")
         parser.print_help()
         sys.exit(1)
 
+    return data
+
+
+def run(data: dict):
+    """Run the MAVLink to AMQP bridge with the provided config dict"""
     # SETUP
     # open the AMQP connection
     credentials = pika.PlainCredentials(data['amqp']['username'], data['amqp']['password'])
@@ -86,7 +91,7 @@ if __name__ == "__main__":
     context.verify_mode = ssl.CERT_NONE  # TODO: testing only!!!
     ssl_options = pika.SSLOptions(context)
 
-    # open the connection
+    logger.info("Starting AMQP connection to %s", data['amqp']['host'])
     parameters = pika.ConnectionParameters(host=data['amqp']['host'],
                                            credentials=credentials, ssl_options=ssl_options)
 
@@ -95,46 +100,89 @@ if __name__ == "__main__":
 
     # open the MAVLink connection
     try:
+        logger.info("Starting MAVLink connection to %s", data['mavlink']['device'])
         mav = mavutil.mavlink_connection(
             data['mavlink']['device'], source_system=OWN_SYSID, source_component=OWN_COMPID)
     except OSError:
         logger.error("MAVLink connection failed, exiting")
         sys.exit(-1)
 
-    # # when udpout, start with sending a heartbeat
-    # if data['mavlink']['device'].startswith('udpout:'):
-    #     i = 0
-    #     logger.info("UDP out: sending heartbeat to initilize a connection")
-    #     while True:
-    #         mav.mav.heartbeat_send(OWN_SYSID, OWN_COMPID, base_mode=0,
-    #                                custom_mode=0, system_status=0)
-    #         i += 1
+    # when udpout, start with sending a heartbeat
+    if data['mavlink']['device'].startswith('udpout:'):
+        i = 0
+        logger.info("UDP out: sending heartbeat to initilize a connection")
+        while True:
+            mav.mav.heartbeat_send(OWN_SYSID, OWN_COMPID, base_mode=0,
+                                   custom_mode=0, system_status=0)
+            i += 1
 
-    #         msg = mav.recv_match(type='HEARTBEAT', blocking=True, timeout=1)
-    #         if msg is not None:
-    #             break
+            msg = mav.recv_match(type='HEARTBEAT', blocking=True, timeout=1)
+            if msg is not None:
+                break
 
-    #         if i >= UDP_CONNECT_TIMEOUT:
-    #             logger.error("UDP out: nothing received, terminating")
-    #             sys.exit(-1)
+            if i >= UDP_CONNECT_TIMEOUT:
+                logger.error("UDP out: nothing received, terminating")
+                sys.exit(-1)
 
-    #         logger.debug("UDP out: retrying heartbeat")
+            logger.debug("UDP out: retrying heartbeat")
 
     # RUN
     while True:
+        # wait for message from MAVLink
         msg = mav.recv_match(type='UTM_GLOBAL_POSITION', blocking=True)
         logger.debug("Message from %d/%d: %s", msg.get_srcSystem(), msg.get_srcComponent(), msg)
 
-        # TODO: convert to json
+        # convert to UDVeo json
+        utm_tracking_data = {"uavId": "",
+                             "flightOperationId": "USSP-HH-unknwon",
+                             "timeStamp": 0.0,  # (float) seconds unix time
+                             "coordinate": {
+                                 "easting": 0.0,  # (float) degrees east (longitude)
+                                 "northing": 0.0,  # (float) degrees north (latitude)
+                                 "epsgCode": 4326  # 4326 = WGS84
+                             },
+                             "altitudeInMeters": 0.0,
+                             "speedInMetersPerSecond": 0.0,
+                             "isFlying": False
+                             }
 
+        # fill in data from UTM_GLOBAL_POSITION
+        uav_id_string = "0x"
+        for byte in msg.uas_id:
+            uav_id_string += format(byte, "02x")
+
+        velocity = math.sqrt(msg.vx * msg.vx + msg.vy * msg.vy) / 100  # cm/s -> m/s
+
+        utm_tracking_data['uavId'] = uav_id_string
+        utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
+        utm_tracking_data['coordinate']['northing'] = msg.lat / 10000000  # degE7 -> deg
+        utm_tracking_data['coordinate']['easting'] = msg.lon / 10000000  # degE7 -> deg
+        utm_tracking_data['altitudeInMeters'] = msg.alt / 10000  # mm -> m
+        utm_tracking_data['speedInMetersPerSecond'] = velocity  # cm/s -> m/s
+        utm_tracking_data['isFlying'] = (msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND)
+
+        logger.info("Tracked '%s': %f N, %f E at %f m flying %f m/s to TODO HDG",
+                    utm_tracking_data['uavId'],
+                    utm_tracking_data['coordinate']['northing'],
+                    utm_tracking_data['coordinate']['easting'],
+                    utm_tracking_data['altitudeInMeters'],
+                    utm_tracking_data['speedInMetersPerSecond'])
+
+        # send via AMQP
+        json_string = json.dumps(utm_tracking_data)
         try:
-        channel.basic_publish(exchange='', routing_key=data['amqp']['queue'],
-                              body='{"uavId":"simD1","flightOperationId":"USSP-HH-5","timeStamp":1614699998.863000000,"coordinate":{"easting":9.933075488056465,"northing":53.505255593047735,"epsgCode":4326},"altitudeInMeters":1.0,"speedInMetersPerSecond":0.0,"isFlying":true}')
+            channel.basic_publish(exchange='', routing_key=data['amqp']['queue'], body=json_string)
         except pika.exceptions.UnroutableError:
             logger.warning("AMQP message routing failed")
         except pika.exceptions.NackError:
             logger.warning("AMQP message not acknowledged")
 
-        logger.info("Message sent")
 
-        # connection.close()
+if __name__ == "__main__":
+    LOG_FORMAT = '%(asctime)s %(levelname)s:%(name)s: %(message)s'
+    LOG_DATEFMT = '%Y-%m-%dT%H:%M:%S%z'
+    logging.basicConfig(format=LOG_FORMAT, datefmt=LOG_DATEFMT, level=logging.INFO)
+    logger = logging.getLogger()
+
+    config = setup()
+    run(config)

@@ -10,6 +10,16 @@ cd MAVLink-Tracking-Bridge
 pip3 install -r requirements.txt
 ```
 
+The current (2021-03-17) version of pymavlink (v2.4.14) does not contain the UTM_GLOBAL_POSITION yet, but the next version should have it in.
+Please see [the corresponding issue](https://github.com/ArduPilot/pymavlink/issues/518), when a new version is scheduled.
+
+In the meantime, pymalink must be installed manually, like this:
+```shell
+git clone --recursive https://github.com/ArduPilot/mavlink.git
+cd mavlink/pymavlink
+DISABLE_MAVNATIVE=True MDEF=$PWD/../message_definitions python -m pip install . -v
+```
+
 
 ## Usage
 Create a settings file with the AMPQ server credentials and MAVLink connection, like this (default name: `./settings.yml`):
