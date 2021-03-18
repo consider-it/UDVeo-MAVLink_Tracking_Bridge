@@ -137,36 +137,46 @@ def run(data: dict):
                              "flightOperationId": "USSP-HH-unknwon",
                              "timeStamp": 0.0,  # (float) seconds unix time
                              "coordinate": {
-                                 "easting": 0.0,  # (float) degrees east (longitude)
-                                 "northing": 0.0,  # (float) degrees north (latitude)
-                                 "epsgCode": 4326  # 4326 = WGS84
+                                 "type": "Point",
+                                 # (float) degrees east (longitude, latitude)
+                                 "coordinates": [10.0, 53.0],
                              },
+                             "heading": 0,  # (float) degree
                              "altitudeInMeters": 0.0,
                              "speedInMetersPerSecond": 0.0,
                              "isFlying": False
                              }
 
         # fill in data from UTM_GLOBAL_POSITION
-        uav_id_string = "0x"
+        uav_id_string = ""
         for byte in msg.uas_id:
             uav_id_string += format(byte, "02x")
 
         velocity = math.sqrt(msg.vx * msg.vx + msg.vy * msg.vy) / 100  # cm/s -> m/s
+        heading = math.atan2(msg.vy, msg.vx) / math.pi * 180  # degrees
+        if heading < 0:
+            heading += 360
 
         utm_tracking_data['uavId'] = uav_id_string
         utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
-        utm_tracking_data['coordinate']['northing'] = msg.lat / 10000000  # degE7 -> deg
-        utm_tracking_data['coordinate']['easting'] = msg.lon / 10000000  # degE7 -> deg
-        utm_tracking_data['altitudeInMeters'] = msg.alt / 10000  # mm -> m
+        utm_tracking_data['coordinate']['coordinates'][1] = msg.lat / 10000000  # degE7 -> deg
+        utm_tracking_data['coordinate']['coordinates'][0] = msg.lon / 10000000  # degE7 -> deg
+        utm_tracking_data['altitudeInMeters'] = msg.alt / 1000  # mm -> m
+        utm_tracking_data['heading'] = heading
         utm_tracking_data['speedInMetersPerSecond'] = velocity  # cm/s -> m/s
-        utm_tracking_data['isFlying'] = (msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND)
+        utm_tracking_data['isFlying'] = (
+            msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND and msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN)
 
-        logger.info("Tracked '%s': %f N, %f E at %f m flying %f m/s to TODO HDG",
+        fly_string = "flying" if utm_tracking_data['isFlying'] else "grounded"
+        logger.info("Tracked '%s': %+9.4f N, %+9.4f E at %+6.2f m %s %4.2f m/s @ %3.0f°",
                     utm_tracking_data['uavId'],
-                    utm_tracking_data['coordinate']['northing'],
-                    utm_tracking_data['coordinate']['easting'],
+                    utm_tracking_data['coordinate']['coordinates'][1],
+                    utm_tracking_data['coordinate']['coordinates'][0],
                     utm_tracking_data['altitudeInMeters'],
-                    utm_tracking_data['speedInMetersPerSecond'])
+                    fly_string,
+                    utm_tracking_data['speedInMetersPerSecond'],
+                    utm_tracking_data['heading']
+                    )
 
         # send via AMQP
         json_string = json.dumps(utm_tracking_data)
