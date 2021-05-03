@@ -5,19 +5,9 @@ Network-based Remote Identification (Tracking) of UAS using the MAVLink UTM_GLOB
 ## Installation
 Clone this repository (create a venv, if you like) and install all requirements:
 ```shell
-git clone -b main https://office.consider-ip.com/gitea/UDVeo/MAVLink-Tracking-Bridge.git
+git clone -b feature/python https://office.consider-ip.com/gitea/UDVeo/MAVLink-Tracking-Bridge.git
 cd MAVLink-Tracking-Bridge
 pip3 install -r requirements.txt
-```
-
-The current (2021-03-17) version of pymavlink (v2.4.14) does not contain the UTM_GLOBAL_POSITION yet, but the next version should have it in.
-Please see [the corresponding issue](https://github.com/ArduPilot/pymavlink/issues/518), when a new version is scheduled.
-
-In the meantime, pymalink must be installed manually, like this:
-```shell
-git clone --recursive https://github.com/ArduPilot/mavlink.git
-cd mavlink/pymavlink
-DISABLE_MAVNATIVE=True MDEF=$PWD/../message_definitions python -m pip install . -v
 ```
 
 
