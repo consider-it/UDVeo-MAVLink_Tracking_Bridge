@@ -1,3 +1,4 @@
 pymavlink
 pika
 pyyaml
+paho-mqtt

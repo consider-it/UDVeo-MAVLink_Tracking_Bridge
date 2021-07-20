@@ -19,6 +19,7 @@ import ssl
 import math
 import yaml
 import pika
+import paho.mqtt.client as paho
 import pymavlink.mavutil as mavutil
 from pymavlink.dialects.v10 import common as mavlink1
 
@@ -27,7 +28,7 @@ OWN_COMPID = 0
 UDP_CONNECT_TIMEOUT = 10
 
 
-def setup() -> dict:
+def setup() -> tuple[dict, bool, bool]:
     """Parse config file and CLI options; Return config dict"""
     parser = argparse.ArgumentParser(description='MAVLink Network Remote ID (Tracking) Bridge')
     parser.add_argument("-c", "--config", default='settings.yml',
@@ -46,11 +47,12 @@ def setup() -> dict:
         logger.setLevel(logging.WARNING)
 
     amqp_conf_valid = False
+    mqtt_conf_valid = False
     mavlink_config_exists = False
     with open(args.config) as file:
         data = yaml.load(file, Loader=yaml.FullLoader)
 
-        # all amqp keys are required
+        # all amqp keys are required for a valid connection
         amqp_conf_valid = False
         if 'amqp' in data:
             amqp_keys = ['host', 'username', 'password', 'queue']
@@ -60,8 +62,19 @@ def setup() -> dict:
                     logger.error("Key \'%s\' missing from AMQP config", key)
                     amqp_conf_valid = False
 
-        if not amqp_conf_valid:
-            logger.error("AMQP config section missing or incomplete in settings file")
+        
+        # all mqtt keys are required for a valid connection
+        mqtt_conf_valid = False
+        if 'mqtt' in data:
+            mqtt_keys = ['host', 'port', 'topic']
+            mqtt_conf_valid = True
+            for key in mqtt_keys:
+                if key not in data['mqtt']:
+                    logger.error("Key \'%s\' missing from MQTT config", key)
+                    mqtt_conf_valid = False
+
+        if not amqp_conf_valid and not mqtt_conf_valid:
+            logger.error("A valid AMQP or MQTT config is required")
             sys.exit(1)
 
         # mavlink config is optional
@@ -77,26 +90,37 @@ def setup() -> dict:
         parser.print_help()
         sys.exit(1)
 
-    return data
+    return data, amqp_conf_valid, mqtt_conf_valid
 
 
-def run(data: dict):
+def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
     """Run the MAVLink to AMQP bridge with the provided config dict"""
     # SETUP
+    
     # open the AMQP connection
-    credentials = pika.PlainCredentials(data['amqp']['username'], data['amqp']['password'])
-    # context = ssl.create_default_context()
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False  # TODO: testing only!!!
-    context.verify_mode = ssl.CERT_NONE  # TODO: testing only!!!
-    ssl_options = pika.SSLOptions(context)
+    amqp_channel = None
+    if enable_amqp:
+        credentials = pika.PlainCredentials(data['amqp']['username'], data['amqp']['password'])
+        # context = ssl.create_default_context()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False  # TODO: testing only!!!
+        context.verify_mode = ssl.CERT_NONE  # TODO: testing only!!!
+        ssl_options = pika.SSLOptions(context)
 
-    logger.info("Starting AMQP connection to %s", data['amqp']['host'])
-    parameters = pika.ConnectionParameters(host=data['amqp']['host'],
-                                           credentials=credentials, ssl_options=ssl_options)
+        logger.info("Starting AMQP connection to %s", data['amqp']['host'])
+        parameters = pika.ConnectionParameters(host=data['amqp']['host'],
+                                            credentials=credentials, ssl_options=ssl_options)
 
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
+        connection = pika.BlockingConnection(parameters)
+        amqp_channel = connection.channel()
+    
+    # open the MQTT connection
+    mqtt_client = None
+    if enable_mqtt:
+        logger.info("Starting MQTT connection to %s:%s", data['mqtt']['host'], data['mqtt']['port'])
+        mqtt_client = paho.Client()
+        mqtt_client.connect(data['mqtt']['host'], port=data['mqtt']['port'])
+        mqtt_client.loop_start()
 
     # open the MAVLink connection
     try:
@@ -178,14 +202,20 @@ def run(data: dict):
                     utm_tracking_data['heading']
                     )
 
-        # send via AMQP
         json_string = json.dumps(utm_tracking_data)
-        try:
-            channel.basic_publish(exchange='', routing_key=data['amqp']['queue'], body=json_string)
-        except pika.exceptions.UnroutableError:
-            logger.warning("AMQP message routing failed")
-        except pika.exceptions.NackError:
-            logger.warning("AMQP message not acknowledged")
+
+        # send via AMQP
+        if enable_amqp:
+            try:
+                amqp_channel.basic_publish(exchange='', routing_key=data['amqp']['queue'], body=json_string)
+            except pika.exceptions.UnroutableError:
+                logger.warning("AMQP message routing failed")
+            except pika.exceptions.NackError:
+                logger.warning("AMQP message not acknowledged")
+
+        # send via MQTT
+        if enable_mqtt:
+            mqtt_client.publish(data['mqtt']['topic'], payload=json_string, qos=0, retain=False)
 
 
 if __name__ == "__main__":
@@ -194,5 +224,5 @@ if __name__ == "__main__":
     logging.basicConfig(format=LOG_FORMAT, datefmt=LOG_DATEFMT, level=logging.INFO)
     logger = logging.getLogger()
 
-    config = setup()
-    run(config)
+    config, amqp_valid, mqtt_valid = setup()
+    run(config, amqp_valid, mqtt_valid)

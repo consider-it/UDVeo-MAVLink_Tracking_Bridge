@@ -12,13 +12,21 @@ pip3 install -r requirements.txt
 
 
 ## Usage
-Create a settings file with the AMPQ server credentials and MAVLink connection, like this (default name: `./settings.yml`):
+Date can be published to an AMQP broker and/or a MQTT broker.
+One of both sections must exist in the config file, otherwise the application won't start.
+
+Create a settings file with the AMPQ and/or MQTT server credentials and MAVLink connection, like this (default name: `./settings.yml`):
 ```yaml
 amqp:
   host: localhost
   username: foobar
   password: 1234
   queue: testqueue
+
+mqtt:
+  host: localhost
+  port: 1883
+  topic: testtopic
 
 mavlink:
   device: udpin:0.0.0.0:14560
