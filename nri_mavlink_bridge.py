@@ -17,11 +17,11 @@ import sys
 import json
 import ssl
 import math
+from typing import Tuple
 import yaml
 import pika
 import paho.mqtt.client as paho
 import pymavlink.mavutil as mavutil
-from typing import Tuple
 from pymavlink.dialects.v10 import common as mavlink1
 
 OWN_SYSID = 255
@@ -182,7 +182,7 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
         if heading < 0:
             heading += 360
 
-        utm_tracking_data['uavId'] = uav_id_string
+        utm_tracking_data['uavId'] = "D2X-" + uav_id_string[-8:]
         utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
         utm_tracking_data['coordinate']['coordinates'][1] = msg.lat / 10000000  # degE7 -> deg
         utm_tracking_data['coordinate']['coordinates'][0] = msg.lon / 10000000  # degE7 -> deg
