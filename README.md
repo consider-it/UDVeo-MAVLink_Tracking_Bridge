@@ -1,5 +1,7 @@
 # UDVeo MAVLink Tracking Bridge
-Network-based Remote Identification (Tracking) of UAS using the MAVLink UTM_GLOBAL_POSITION message. Connector application translating between MAVLink and the USSP prototype.
+Ardupilot workaround for Network-based Remote Identification (Tracking) of UAS using the MAVLink GLOBAL_POSITION_INT message. Connector application translating between MAVLink and the USSP prototype.
+
+Because the GLOBAL_POSITION_INT has no unique UAV ID, the mavlink system ID is used as a workaround.
 
 
 ## Installation

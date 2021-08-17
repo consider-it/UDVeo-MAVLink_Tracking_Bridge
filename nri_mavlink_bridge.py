@@ -3,7 +3,7 @@
 UDVeo - MAVLink Tracking Bridge
 
 Connector application translating between MAVLink and the USSP prototype for Network-based Remote
-Identification (Tracking) of UAS using the MAVLink UTM_GLOBAL_POSITION message.
+Identification (Tracking) of UAS using the MAVLink GLOBAL_POSITION_INT message.
 
 A settings file (YAML) with the credentials is required.
 
@@ -154,12 +154,12 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
     # RUN
     while True:
         # wait for message from MAVLink
-        msg = mav.recv_match(type='UTM_GLOBAL_POSITION', blocking=True)
+        msg = mav.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
         logger.debug("Message from %d/%d: %s", msg.get_srcSystem(), msg.get_srcComponent(), msg)
 
         # convert to UDVeo json
         utm_tracking_data = {"uavId": "",
-                             "flightOperationId": "USSP-HH-unknwon",
+                             "flightOperationId": "USSP-HH-ArduPilotBridge",
                              "timeStamp": 0.0,  # (float) seconds unix time
                              "coordinate": {
                                  "type": "Point",
@@ -172,25 +172,22 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
                              "isFlying": False
                              }
 
-        # fill in data from UTM_GLOBAL_POSITION
-        uav_id_string = ""
-        for byte in msg.uas_id:
-            uav_id_string += format(byte, "02x")
+        # fill in data from GLOBAL_POSITION_INT
+        uav_id_string = str(msg.get_srcSystem())
 
         velocity = math.sqrt(msg.vx * msg.vx + msg.vy * msg.vy) / 100  # cm/s -> m/s
         heading = math.atan2(msg.vy, msg.vx) / math.pi * 180  # degrees
         if heading < 0:
             heading += 360
 
-        utm_tracking_data['uavId'] = "D2X-" + uav_id_string[-8:]
-        utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
+        utm_tracking_data['uavId'] = "D2X-Ardu" + uav_id_string
+        utm_tracking_data['timeStamp'] = 0
         utm_tracking_data['coordinate']['coordinates'][1] = msg.lat / 10000000  # degE7 -> deg
         utm_tracking_data['coordinate']['coordinates'][0] = msg.lon / 10000000  # degE7 -> deg
         utm_tracking_data['altitudeInMeters'] = msg.alt / 1000  # mm -> m
         utm_tracking_data['heading'] = heading
         utm_tracking_data['speedInMetersPerSecond'] = velocity  # cm/s -> m/s
-        utm_tracking_data['isFlying'] = (
-            msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND and msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN)
+        utm_tracking_data['isFlying'] = True
 
         fly_string = "flying" if utm_tracking_data['isFlying'] else "grounded"
         logger.info("Tracked '%s': %+9.4f N, %+9.4f E at %+6.2f m %s %4.2f m/s @ %3.0f°",
