@@ -152,6 +152,10 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
             logger.debug("UDP out: retrying heartbeat")
 
     # RUN
+    altitude_offset = 0
+    if 'altitudeOffsetMeters' in data:
+        altitude_offset = data['altitudeOffsetMeters']
+
     while True:
         # wait for message from MAVLink
         msg = mav.recv_match(type='UTM_GLOBAL_POSITION', blocking=True)
@@ -186,7 +190,7 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
         utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
         utm_tracking_data['coordinate']['coordinates'][1] = msg.lat / 10000000  # degE7 -> deg
         utm_tracking_data['coordinate']['coordinates'][0] = msg.lon / 10000000  # degE7 -> deg
-        utm_tracking_data['altitudeInMeters'] = msg.alt / 1000  # mm -> m
+        utm_tracking_data['altitudeInMeters'] = msg.alt / 1000 + altitude_offset  # mm -> m
         utm_tracking_data['heading'] = heading
         utm_tracking_data['speedInMetersPerSecond'] = velocity  # cm/s -> m/s
         utm_tracking_data['isFlying'] = (

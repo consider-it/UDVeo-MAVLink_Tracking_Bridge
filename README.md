@@ -3,6 +3,11 @@ Network-based Remote Identification (Tracking) of UAS using the MAVLink UTM_GLOB
 
 
 ## Installation
+Make sure, that all build tools and python C headers are installed:
+```shell
+sudo apt install build-essential python3-dev
+```
+
 Clone this repository (create a venv, if you like) and install all requirements:
 ```shell
 git clone -b feature/python https://office.consider-ip.com/gitea/UDVeo/MAVLink-Tracking-Bridge.git
@@ -30,6 +35,9 @@ mqtt:
 
 mavlink:
   device: udpin:0.0.0.0:14560
+  #device: /dev/cu.foobar
+
+# altitudeOffsetMeters: -3
 ```
 
 Run:
