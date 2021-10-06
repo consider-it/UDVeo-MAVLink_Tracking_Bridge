@@ -156,6 +156,10 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
     if 'altitudeOffsetMeters' in data:
         altitude_offset = data['altitudeOffsetMeters']
 
+    set_flying_when_grounded = False
+    if 'setFlyingWhenGrounded' in data:
+        set_flying_when_grounded = data['setFlyingWhenGrounded']
+
     while True:
         # wait for message from MAVLink
         msg = mav.recv_match(type='UTM_GLOBAL_POSITION', blocking=True)
@@ -193,8 +197,10 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
         utm_tracking_data['altitudeInMeters'] = msg.alt / 1000 + altitude_offset  # mm -> m
         utm_tracking_data['heading'] = heading
         utm_tracking_data['speedInMetersPerSecond'] = velocity  # cm/s -> m/s
-        utm_tracking_data['isFlying'] = (
-            msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND and msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN)
+
+        utm_tracking_data['isFlying'] = msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND and msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN
+        if set_flying_when_grounded:  # override for testing purposes
+            utm_tracking_data['isFlying'] = msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN
 
         fly_string = "flying" if utm_tracking_data['isFlying'] else "grounded"
         logger.info("Tracked '%s': %+9.4f N, %+9.4f E at %+6.2f m %s %4.2f m/s @ %3.0f°",

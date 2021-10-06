@@ -37,7 +37,8 @@ mavlink:
   device: udpin:0.0.0.0:14560
   #device: /dev/cu.foobar
 
-# altitudeOffsetMeters: -3
+# altitudeOffsetMeters: 0
+# setFlyingWhenGrounded: False
 ```
 
 Run:
