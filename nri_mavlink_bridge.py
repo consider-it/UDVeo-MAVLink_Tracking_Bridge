@@ -200,7 +200,7 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
 
         utm_tracking_data['isFlying'] = msg.flight_state != mavlink1.UTM_FLIGHT_STATE_GROUND and msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN
         if set_flying_when_grounded:  # override for testing purposes
-            utm_tracking_data['isFlying'] = msg.flight_state != mavlink1.UTM_FLIGHT_STATE_UNKNOWN
+            utm_tracking_data['isFlying'] = True
 
         fly_string = "flying" if utm_tracking_data['isFlying'] else "grounded"
         logger.info("Tracked '%s': %+9.4f N, %+9.4f E at %+6.2f m %s %4.2f m/s @ %3.0f°",
