@@ -167,7 +167,7 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
 
         # convert to UDVeo json
         utm_tracking_data = {"uavId": "",
-                             "flightOperationId": "USSP-HH-unknwon",
+                             "flightOperationId": "USSP-HH-",
                              "timeStamp": 0.0,  # (float) seconds unix time
                              "coordinate": {
                                  "type": "Point",
@@ -190,6 +190,7 @@ def run(data: dict, enable_amqp: bool, enable_mqtt: bool):
         if heading < 0:
             heading += 360
 
+        utm_tracking_data['flightOperationId'] = "USSP-HH-D2X_" + uav_id_string[-8:]
         utm_tracking_data['uavId'] = "D2X-" + uav_id_string[-8:]
         utm_tracking_data['timeStamp'] = msg.time / 1000000  # us -> s
         utm_tracking_data['coordinate']['coordinates'][1] = msg.lat / 10000000  # degE7 -> deg
