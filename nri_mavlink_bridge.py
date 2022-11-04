@@ -9,6 +9,7 @@ A settings file (YAML) with the credentials is required.
 
 Author:    Jannik Beyerstedt <beyerstedt@consider-it.de>
 Copyright: (c) consider it GmbH, 2021
+License:   MIT
 """
 
 import argparse
